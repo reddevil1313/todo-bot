@@ -1,24 +1,32 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
+from alembic import command
+from alembic.config import Config as AlembicConfig
 from telegram.ext import Application
 
 from . import handlers, scheduler
 from .config import Config
-from .models import init_db, make_engine, make_sessionmaker
+from .models import make_engine, make_sessionmaker
+
+
+def migrate(url: str) -> None:
+    cfg = AlembicConfig()
+    cfg.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
+    cfg.attributes["url"] = url
+    command.upgrade(cfg, "head")
 
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
     config = Config.from_env()
+    migrate(config.database_url)
     engine = make_engine(config.database_url)
 
-    async def post_init(app: Application) -> None:
-        await init_db(engine)
-
-    app = Application.builder().token(config.bot_token).post_init(post_init).build()
+    app = Application.builder().token(config.bot_token).build()
     app.bot_data["config"] = config
     app.bot_data["sessionmaker"] = make_sessionmaker(engine)
     handlers.register(app)

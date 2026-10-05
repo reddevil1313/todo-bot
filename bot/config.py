@@ -12,6 +12,10 @@ def _normalise_db_url(url: str) -> str:
     return url
 
 
+def database_url() -> str:
+    return _normalise_db_url(os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///todo.db"))
+
+
 @dataclass(frozen=True)
 class Config:
     bot_token: str
@@ -26,9 +30,7 @@ class Config:
     def from_env(cls) -> Config:
         return cls(
             bot_token=os.environ["BOT_TOKEN"],
-            database_url=_normalise_db_url(
-                os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///todo.db")
-            ),
+            database_url=database_url(),
             default_timezone=os.environ.get("DEFAULT_TZ", "Asia/Singapore"),
             webhook_url=os.environ.get("WEBHOOK_URL") or None,
             port=int(os.environ.get("PORT", "8080")),
