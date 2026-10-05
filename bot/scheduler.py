@@ -16,12 +16,13 @@ from telegram.ext import ContextTypes
 
 from . import services
 from .matrix import render_matrix, task_line
-from .models import User
+from .models import Task, User
 
 log = logging.getLogger(__name__)
 
 DIGEST, ALERT, REVIEW = "digest", "alert", "review"
 REVIEW_WEEKDAY = 6  # sunday
+REMIND_MINUTES = 60
 
 
 def due_notifications(user: User, now_local: datetime) -> list[str]:
@@ -67,6 +68,29 @@ async def build_message(s: AsyncSession, user: User, kind: str, today: date) -> 
     return None
 
 
+def due_soon(tasks: list[Task], now_local: datetime) -> list[Task]:
+    # tasks with a time that are due within the hour and not reminded yet.
+    # comparing against reminded_for means moving the deadline re-arms it
+    now = now_local.replace(tzinfo=None)
+    out = []
+    for t in tasks:
+        if not (t.due_date and t.due_time):
+            continue
+        due = datetime.combine(t.due_date, t.due_time)
+        if now < due <= now + timedelta(minutes=REMIND_MINUTES) and t.reminded_for != due:
+            out.append(t)
+    return out
+
+
+async def send(context: ContextTypes.DEFAULT_TYPE, user: User, text: str) -> None:
+    try:
+        await context.bot.send_message(user.chat_id, text, parse_mode="HTML")
+    except Forbidden:
+        log.info("user %s blocked the bot", user.id)
+    except TelegramError:
+        log.exception("failed to send to %s", user.id)
+
+
 async def tick(context: ContextTypes.DEFAULT_TYPE) -> None:
     now = datetime.now(UTC)
     async with context.bot_data["sessionmaker"]() as s:
@@ -75,12 +99,10 @@ async def tick(context: ContextTypes.DEFAULT_TYPE) -> None:
             for kind in due_notifications(user, now_local):
                 text = await build_message(s, user, kind, now_local.date())
                 mark_sent(user, kind, now_local.date())
-                if not text:
-                    continue
-                try:
-                    await context.bot.send_message(user.chat_id, text, parse_mode="HTML")
-                except Forbidden:
-                    log.info("user %s blocked the bot", user.id)
-                except TelegramError:
-                    log.exception("failed to send %s to %s", kind, user.id)
+                if text:
+                    await send(context, user, text)
+            for task in due_soon(await services.open_tasks(s, user), now_local):
+                task.reminded_for = datetime.combine(task.due_date, task.due_time)
+                line = task_line(task, now_local.date(), user.escalate_days)
+                await send(context, user, f"⏳ <b>Due at {task.due_time:%H:%M}</b>\n{line}")
             await s.commit()

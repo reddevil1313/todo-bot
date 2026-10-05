@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, time
+from datetime import date, datetime, time
 
 from sqlalchemy import BigInteger, ForeignKey, String
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
@@ -46,6 +46,8 @@ class Task(Base):
     recurrence: Mapped[str | None] = mapped_column(String(16), default=None)
     done: Mapped[bool] = mapped_column(default=False, index=True)
     completed_on: Mapped[date | None] = mapped_column(default=None)
+    # the due datetime we already sent a reminder for
+    reminded_for: Mapped[datetime | None] = mapped_column(default=None)
 
 
 def make_engine(url: str) -> AsyncEngine:
