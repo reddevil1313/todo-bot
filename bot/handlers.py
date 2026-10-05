@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from datetime import time, timedelta
+from datetime import date, time, timedelta
 from html import escape
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -18,7 +18,7 @@ from telegram.ext import (
 
 from . import services
 from .llm import llm_parse
-from .matrix import render_matrix, render_task
+from .matrix import auto_escalated, render_matrix, render_task
 from .models import Task
 from .parser import parse_task
 
@@ -50,9 +50,10 @@ async def user_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await s.commit()
 
 
-def task_keyboard(task: Task) -> InlineKeyboardMarkup:
+def task_keyboard(task: Task, today: date, escalate_days: int) -> InlineKeyboardMarkup:
+    urgent = "on" if task.urgent else "auto" if auto_escalated(task, today, escalate_days) else "off"
     return InlineKeyboardMarkup([
-        [Btn(f"Urgent: {'on' if task.urgent else 'off'}", callback_data=f"u:{task.id}"),
+        [Btn(f"Urgent: {urgent}", callback_data=f"u:{task.id}"),
          Btn(f"Important: {'on' if task.important else 'off'}", callback_data=f"i:{task.id}")],
         [Btn("✅ Done", callback_data=f"d:{task.id}"),
          Btn("⏰ +1 day", callback_data=f"p:{task.id}"),
@@ -100,7 +101,7 @@ async def add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         task = await services.add_task(s, user, parsed)
         await update.message.reply_html(
             "Added ✓\n" + render_task(task, today, user.escalate_days),
-            reply_markup=task_keyboard(task),
+            reply_markup=task_keyboard(task, today, user.escalate_days),
         )
 
 
@@ -121,7 +122,7 @@ async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             return
         await update.message.reply_html(
             "Updated ✓\n" + render_task(task, today, user.escalate_days),
-            reply_markup=task_keyboard(task),
+            reply_markup=task_keyboard(task, today, user.escalate_days),
         )
 
 
@@ -240,7 +241,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await query.answer()
         await query.edit_message_text(
             render_task(task, today, user.escalate_days),
-            parse_mode="HTML", reply_markup=task_keyboard(task),
+            parse_mode="HTML", reply_markup=task_keyboard(task, today, user.escalate_days),
         )
 
 
