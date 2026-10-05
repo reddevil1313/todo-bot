@@ -19,11 +19,12 @@ bot:  Added ✓
   `25/12`, `in 3 days`), times (`5pm`, `17:00`), the quadrant (`urgent`,
   `important`, `!u`, `!i`, `q1`-`q4`) and repeats (`daily`, `weekly`, `monthly`).
 - `/list` shows the matrix. Tap a task to change urgent/important, mark it done,
-  push it back a day or delete it.
+  push it back a day, rename it, change the date or delete it.
 - Tasks become urgent on their own when the deadline is 2 days away
   (`/escalate` to change). These show up with ⏫.
 - Sends the list every morning (`/digest 08:00`) and a reminder the evening
   before something is due (`/alert 20:00`). Weekly summary on Sundays.
+- If a task has a time, you also get a reminder an hour before.
 - Repeating tasks come back after you finish them. `/stats` shows your streak.
 - Works for more than one person. Everyone gets their own tasks, timezone and
   notification times.
@@ -41,6 +42,7 @@ bot/
   matrix.py      quadrants and message formatting
   scheduler.py   digest, alerts, weekly review
   models.py      sqlalchemy models
+  migrations/    alembic migrations
 ```
 
 Stack: python-telegram-bot, SQLAlchemy (async), Postgres in production and
@@ -83,6 +85,16 @@ It has to stay running for the reminders to work, so don't use a host that
 sleeps idle apps. Build the Dockerfile, set `BOT_TOKEN` and `DATABASE_URL`.
 It uses polling by default. Set `WEBHOOK_URL` (and `PORT`) for webhooks.
 
+## Changing the schema
+
+Migrations run on startup. After changing `models.py`:
+
+```bash
+alembic revision --autogenerate -m "what changed"
+```
+
+Check the generated file in `bot/migrations/versions/` before committing it.
+
 ## Tests
 
 ```bash
@@ -94,8 +106,5 @@ GitHub Actions runs both on every push.
 
 ## Todo
 
-- migrations (tables are just created on startup right now)
-- reminder an hour before a task with a time
-- edit a task's title or date
 - Google Calendar sync
 - voice notes
