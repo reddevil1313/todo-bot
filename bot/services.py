@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import Task, User
-from .parser import ParsedTask, add_months
+from .parser import ParsedTask, add_months, parse_task
 
 
 def local_today(user: User) -> date:
@@ -93,6 +93,23 @@ async def complete_task(s: AsyncSession, user: User, task: Task, today: date) ->
 
 def postpone(task: Task, today: date, days: int = 1) -> None:
     task.due_date = max(task.due_date or today, today) + timedelta(days=days)
+
+
+def edit_task(task: Task, field: str, text: str, today: date) -> bool:
+    text = text.strip()
+    if field == "title":
+        if not text:
+            return False
+        task.title = text[:300]
+        return True
+    if text.lower() in ("none", "clear", "remove"):
+        task.due_date = task.due_time = None
+        return True
+    parsed = parse_task(text, today)
+    if parsed.due_date is None:
+        return False
+    task.due_date, task.due_time = parsed.due_date, parsed.due_time
+    return True
 
 
 async def completed_since(s: AsyncSession, user: User, since: date) -> int:

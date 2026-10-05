@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, time, timedelta
 
 from bot import services
 from bot.matrix import quadrant, render_matrix
@@ -76,3 +76,14 @@ async def test_new_user_gets_defaults(session):
     u = await services.get_or_create_user(session, 99, 99, "Asia/Singapore")
     assert u.timezone == "Asia/Singapore" and u.last_digest_on is not None
     assert (await services.get_or_create_user(session, 99, 100, "UTC")).chat_id == 100
+
+
+async def test_edit_title_and_deadline(session, user):
+    t = await add(session, user, "Old name", due_date=TODAY, due_time=time(9, 0))
+    assert services.edit_task(t, "title", "  New name ", TODAY) and t.title == "New name"
+    assert not services.edit_task(t, "title", "   ", TODAY)
+    assert services.edit_task(t, "due", "fri 5pm", TODAY)
+    assert (t.due_date, t.due_time) == (date(2026, 10, 9), time(17, 0))
+    assert not services.edit_task(t, "due", "whenever", TODAY)
+    assert t.due_date == date(2026, 10, 9)  # unchanged on bad input
+    assert services.edit_task(t, "due", "none", TODAY) and t.due_date is None and t.due_time is None

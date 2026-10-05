@@ -57,6 +57,8 @@ def task_keyboard(task: Task) -> InlineKeyboardMarkup:
         [Btn("✅ Done", callback_data=f"d:{task.id}"),
          Btn("⏰ +1 day", callback_data=f"p:{task.id}"),
          Btn("🗑 Delete", callback_data=f"x:{task.id}")],
+        [Btn("✏️ Rename", callback_data=f"r:{task.id}"),
+         Btn("📅 Change date", callback_data=f"t:{task.id}")],
         [Btn("« Back to list", callback_data="l:0")],
     ])
 
@@ -100,6 +102,32 @@ async def add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             "Added ✓\n" + render_task(task, today, user.escalate_days),
             reply_markup=task_keyboard(task),
         )
+
+
+async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    pending = context.user_data.pop("edit", None)
+    if not pending:
+        return await add(update, context)
+    task_id, field = pending
+    async with user_session(update, context) as (s, user):
+        today = services.local_today(user)
+        task = await services.get_task(s, user, task_id)
+        if task is None or task.done:
+            await update.message.reply_text("That task no longer exists.")
+            return
+        if not services.edit_task(task, field, update.message.text or "", today):
+            context.user_data["edit"] = pending
+            await update.message.reply_text("Couldn't read that. Try again, or /cancel.")
+            return
+        await update.message.reply_html(
+            "Updated ✓\n" + render_task(task, today, user.escalate_days),
+            reply_markup=task_keyboard(task),
+        )
+
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    had_edit = context.user_data.pop("edit", None)
+    await update.message.reply_text("Cancelled." if had_edit else "Nothing to cancel.")
 
 
 async def list_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -194,6 +222,15 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await query.answer("Deleted")
             return await show_list()
 
+        if action in ("r", "t"):
+            # the next text message from this user is treated as the new value
+            context.user_data["edit"] = (task.id, "title" if action == "r" else "due")
+            await query.answer()
+            prompt = ("Send the new title." if action == "r"
+                      else "Send the new deadline, e.g. <code>fri 5pm</code>. Send <code>none</code> to remove it.")
+            await query.message.reply_html(prompt + "\n/cancel to keep it as it is.")
+            return
+
         if action == "u":
             task.urgent = not task.urgent
         elif action == "i":
@@ -219,4 +256,5 @@ def register(app: Application) -> None:
     app.add_handler(CommandHandler("alert", _setting("alert_time", time.fromisoformat, "20:00")))
     app.add_handler(CommandHandler("escalate", _setting("escalate_days", _days, "2")))
     app.add_handler(CallbackQueryHandler(button))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, add))
+    app.add_handler(CommandHandler("cancel", cancel))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message))
